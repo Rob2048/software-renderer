@@ -4,34 +4,30 @@ const { mat4, mat3, vec2, vec3, vec4, quat } = glMatrix;
 
 const canvas = document.querySelector('canvas');
 
-const texSheet1 = getTexturePixelsFromDomElement('texture-sheet');
-
-function getTexturePixelsFromDomElement(elementName) {
-	const textureSheetDomElement = document.getElementById(elementName);
-
-	const textureSheetCanvas = document.createElement('canvas');
-	const textureSheetContext = textureSheetCanvas.getContext('2d');
-	textureSheetCanvas.width = textureSheetDomElement.width;
-	textureSheetCanvas.height = textureSheetDomElement.height;
-	textureSheetContext.drawImage(textureSheetDomElement, 0, 0);
-
-	const textureSheetImageData = textureSheetContext.getImageData(0, 0, textureSheetCanvas.width, textureSheetCanvas.height);
-	const textureSheetBuffer = textureSheetImageData.data;
-
-	textureSheetCanvas.remove();
-
-	return {
-		width: textureSheetCanvas.width,
-		height: textureSheetCanvas.height,
-		data: textureSheetBuffer,
-	};
-}
-
 // NOTE: Recommended by glMatrix doccs for better performance.
 glMatrix.glMatrix.setMatrixArrayType(Array);
 
+// Color constants (vec3).
+const cBlack = [0.0, 0.0, 0.0];
+const col0 = [1.0, 1.0, 1.0];
+const col1 = [0.3, 0.3, 0.36];
+const cR = [1.0, 0.0, 0.0];
+const cG = [0.0, 1.0, 0.0];
+const cB = [0.0, 0.0, 1.0];
+const cY = [1.0, 1.0, 0.0];
+
+//------------------------------------------------------------------------------------------------
+// Input handling.
+//------------------------------------------------------------------------------------------------
 let mouseDown = false;
 let mousePosLast = [0, 0];
+
+const keyState = {
+	forward: false,
+	backward: false,
+	left: false,
+	right: false,
+};
 
 canvas.addEventListener('mousedown', (event) => {
 	mouseDown = true;
@@ -67,13 +63,6 @@ document.addEventListener(
 	},
 	{ capture: true }
 );
-
-const keyState = {
-	forward: false,
-	backward: false,
-	left: false,
-	right: false,
-};
 
 document.addEventListener('keydown', (event) => {
 	if (event.key === 'w') {
@@ -111,15 +100,34 @@ document.addEventListener('keyup', (event) => {
 	}
 });
 
-const context = canvas.getContext('2d');
-context.fillStyle = 'rgb(61, 72, 99)';
-context.fillRect(0, 0, canvas.width, canvas.height);
+//------------------------------------------------------------------------------------------------
+// Texture management.
+//------------------------------------------------------------------------------------------------
+const texSheet1 = getTexturePixelsFromDomElement('texture-sheet');
 
-const imageData = context.createImageData(canvas.width, canvas.height);
-const frameBuffer = imageData.data;
+function getTexturePixelsFromDomElement(elementName) {
+	const textureSheetDomElement = document.getElementById(elementName);
 
-// Texture sheet is 256 x 1024 with 64 x 64 sized elemnts.
+	const textureSheetCanvas = document.createElement('canvas');
+	const textureSheetContext = textureSheetCanvas.getContext('2d');
+	textureSheetCanvas.width = textureSheetDomElement.width;
+	textureSheetCanvas.height = textureSheetDomElement.height;
+	textureSheetContext.drawImage(textureSheetDomElement, 0, 0);
+
+	const textureSheetImageData = textureSheetContext.getImageData(0, 0, textureSheetCanvas.width, textureSheetCanvas.height);
+	const textureSheetBuffer = textureSheetImageData.data;
+
+	textureSheetCanvas.remove();
+
+	return {
+		width: textureSheetCanvas.width,
+		height: textureSheetCanvas.height,
+		data: textureSheetBuffer,
+	};
+}
+
 function getTexSheetUvs(elementIndex) {
+	// Texture sheet is 256 x 1024 with 64 x 64 sized elemnts.
 	const x = elementIndex % 4;
 	const y = Math.floor(elementIndex / 4);
 
@@ -136,6 +144,27 @@ function getTexSheetUvs(elementIndex) {
 		[u0, v1],
 	];
 }
+
+const tex = [];
+
+for (let i = 0; i < 64; i++) {
+	tex.push(getTexSheetUvs(i));
+}
+
+//------------------------------------------------------------------------------------------------
+// Frame buffer.
+//------------------------------------------------------------------------------------------------
+const context = canvas.getContext('2d');
+context.fillStyle = 'rgb(61, 72, 99)';
+context.fillRect(0, 0, canvas.width, canvas.height);
+const imageData = context.createImageData(canvas.width, canvas.height);
+const frameBuffer = imageData.data;
+
+//------------------------------------------------------------------------------------------------
+// Triangle soup mangament.
+//------------------------------------------------------------------------------------------------
+const attribCount = 11;
+const verts = [];
 
 function pushTri(trisList, p0, p1, p2, uv0, uv1, uv2, c0, c1, c2) {
 	trisList.push(p0[0], p0[1], p0[2], c0[0], c0[1], c0[2], uv0[0], uv0[1], ...calculateNormal(p0, p1, p2));
@@ -155,29 +184,9 @@ function calculateNormal(p0, p1, p2) {
 	return vec3.normalize(vec3.create(), vec3.cross(vec3.create(), ab, ac));
 }
 
-const attribCount = 11;
-
-const cBlack = [0.0, 0.0, 0.0];
-const col0 = [1.0, 1.0, 1.0];
-// const col1 = [0.6, 0.5, 0.4];
-const col1 = [0.3, 0.3, 0.36];
-const cR = [1.0, 0.0, 0.0];
-const cG = [0.0, 1.0, 0.0];
-const cB = [0.0, 0.0, 1.0];
-const cY = [1.0, 1.0, 0.0];
-
-// const tex0 = getTexSheetUvs(3);
-// const tex1 = getTexSheetUvs(38);
-// const tex2 = getTexSheetUvs(7);
-// const tex3 = getTexSheetUvs(1);
-// const tex4 = getTexSheetUvs(14); // snow
-
-const tex = [];
-
-for (let i = 0; i < 64; i++) {
-	tex.push(getTexSheetUvs(i));
-}
-
+//------------------------------------------------------------------------------------------------
+// Level management.
+//------------------------------------------------------------------------------------------------
 const level = [
 	[
 		{ type: 1, texId: 38 },
@@ -222,165 +231,251 @@ const lights = [
 	{ pos: [0.0, 0.0, 1.0], color: [2.0, 0.8, 1.0] },
 ];
 
-let t0 = performance.now();
-const verts = [];
+function compileLevel(level, lights, verts) {
+	verts.length = 0;
 
-const offsetX = -level[0].length / 2;
-const offsetY = -level.length / 2;
+	let t0 = performance.now();
+	const offsetX = -level[0].length / 2;
+	const offsetY = -level.length / 2;
 
-for (let y = 0; y < level.length; y++) {
-	for (let x = 0; x < level[y].length; x++) {
-		const tile = level[y][x];
-		let tex0 = tex[tile.texId];
+	for (let y = 0; y < level.length; y++) {
+		for (let x = 0; x < level[y].length; x++) {
+			const tile = level[y][x];
+			let tex0 = tex[tile.texId];
 
-		if (tile.texRot == 1) {
-			tex0 = [tex0[1], tex0[2], tex0[3], tex0[0]];
-		} else if (tile.texRot == 2) {
-			tex0 = [tex0[2], tex0[3], tex0[0], tex0[1]];
-		} else if (tile.texRot == 3) {
-			tex0 = [tex0[3], tex0[0], tex0[1], tex0[2]];
-		} else if (tile.texRot == 4) {
-			tex0 = [tex0[1], tex0[0], tex0[3], tex0[2]];
+			if (tile.texRot == 1) {
+				tex0 = [tex0[1], tex0[2], tex0[3], tex0[0]];
+			} else if (tile.texRot == 2) {
+				tex0 = [tex0[2], tex0[3], tex0[0], tex0[1]];
+			} else if (tile.texRot == 3) {
+				tex0 = [tex0[3], tex0[0], tex0[1], tex0[2]];
+			} else if (tile.texRot == 4) {
+				tex0 = [tex0[1], tex0[0], tex0[3], tex0[2]];
+			}
+
+			const p0 = [x + offsetX, y + offsetY, 0];
+			const p1 = [x + offsetX + 1, y + offsetY, 0];
+			const p2 = [x + offsetX + 1, y + offsetY + 1, 0];
+			const p3 = [x + offsetX, y + offsetY + 1, 0];
+
+			const cp0 = [x + offsetX, y + offsetY, 1];
+			const cp1 = [x + offsetX + 1, y + offsetY, 1];
+			const cp2 = [x + offsetX + 1, y + offsetY + 1, 1];
+			const cp3 = [x + offsetX, y + offsetY + 1, 1];
+
+			// Get neightbours
+			const empty = { type: 99 };
+			const n0 = x > 0 && y > 0 ? level[y - 1][x - 1] : empty;
+			const n1 = y > 0 ? level[y - 1][x] : empty;
+			const n2 = x < level[y].length - 1 && y > 0 ? level[y - 1][x + 1] : empty;
+			const n3 = x > 0 ? level[y][x - 1] : empty;
+			const n4 = x < level[y].length - 1 ? level[y][x + 1] : empty;
+			const n5 = x > 0 && y < level.length - 1 ? level[y + 1][x - 1] : empty;
+			const n6 = y < level.length - 1 ? level[y + 1][x] : empty;
+			const n7 = x < level[y].length - 1 && y < level.length - 1 ? level[y + 1][x + 1] : empty;
+
+			if (tile.type === 0) {
+				// Floor.
+				const c0 = n0.type == 1 || n1.type == 1 || n3.type == 1 ? col1 : col0;
+				const c1 = n1.type == 1 || n2.type == 1 || n4.type == 1 ? col1 : col0;
+				const c2 = n4.type == 1 || n6.type == 1 || n7.type == 1 ? col1 : col0;
+				const c3 = n3.type == 1 || n5.type == 1 || n6.type == 1 ? col1 : col0;
+
+				pushQuad(verts, p0, p1, p2, p3, tex0[0], tex0[1], tex0[2], tex0[3], c0, c1, c2, c3);
+			} else if (tile.type === 1) {
+				// Wall.
+				if (n1.type == 0) {
+					pushQuad(verts, p0, p1, cp1, cp0, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
+				}
+
+				if (n4.type == 0) {
+					pushQuad(verts, p1, p2, cp2, cp1, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
+				}
+
+				if (n6.type == 0) {
+					pushQuad(verts, p2, p3, cp3, cp2, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
+				}
+
+				if (n3.type == 0) {
+					pushQuad(verts, p3, p0, cp0, cp3, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
+				}
+
+				const texRoof = tex[17];
+				pushQuad(verts, cp0, cp1, cp2, cp3, texRoof[0], texRoof[1], texRoof[2], texRoof[3], col0, col0, col0, col0);
+			}
+
+			// Ceiling.
+			const texRoof = tex[18];
+			const rp0 = [x + offsetX, y + offsetY, 2];
+			const rp1 = [x + offsetX + 1, y + offsetY, 2];
+			const rp2 = [x + offsetX + 1, y + offsetY + 1, 2];
+			const rp3 = [x + offsetX, y + offsetY + 1, 2];
+			pushQuad(verts, rp3, rp2, rp1, rp0, texRoof[0], texRoof[1], texRoof[2], texRoof[3], col0, col0, col0, col0);
+		}
+	}
+
+	// Apply lights.
+	for (let i = 0; i < verts.length; i += attribCount) {
+		const p = vec3.fromValues(verts[i], verts[i + 1], verts[i + 2]);
+		const n = vec3.fromValues(verts[i + 8], verts[i + 9], verts[i + 10]);
+		const occ = vec3.fromValues(verts[i + 3], verts[i + 4], verts[i + 5]);
+
+		const ligthContrib = vec3.create();
+
+		for (let j = 0; j < lights.length; j++) {
+			const l = lights[j];
+			const lDir = vec3.subtract(vec3.create(), l.pos, p);
+			vec3.normalize(lDir, lDir);
+
+			const dot = vec3.dot(n, lDir);
+			if (dot <= 0) {
+				continue;
+			}
+
+			const lightColor = vec3.scale(vec3.create(), l.color, dot);
+
+			// Inverse square falloff.
+			const distSqr = vec3.squaredDistance(l.pos, p);
+			const falloff = 1 / distSqr;
+			vec3.scale(lightColor, lightColor, falloff);
+
+			vec3.add(ligthContrib, ligthContrib, lightColor);
 		}
 
-		const p0 = [x + offsetX, y + offsetY, 0];
-		const p1 = [x + offsetX + 1, y + offsetY, 0];
-		const p2 = [x + offsetX + 1, y + offsetY + 1, 0];
-		const p3 = [x + offsetX, y + offsetY + 1, 0];
+		// Add ambient.
+		vec3.add(ligthContrib, ligthContrib, vec3.fromValues(0.3, 0.3, 0.3));
 
-		const cp0 = [x + offsetX, y + offsetY, 1];
-		const cp1 = [x + offsetX + 1, y + offsetY, 1];
-		const cp2 = [x + offsetX + 1, y + offsetY + 1, 1];
-		const cp3 = [x + offsetX, y + offsetY + 1, 1];
+		// Multiply ambient occlusion.
+		vec3.multiply(ligthContrib, ligthContrib, occ);
 
-		// Get neightbours
-		const empty = { type: 99 };
-		const n0 = x > 0 && y > 0 ? level[y - 1][x - 1] : empty;
-		const n1 = y > 0 ? level[y - 1][x] : empty;
-		const n2 = x < level[y].length - 1 && y > 0 ? level[y - 1][x + 1] : empty;
-		const n3 = x > 0 ? level[y][x - 1] : empty;
-		const n4 = x < level[y].length - 1 ? level[y][x + 1] : empty;
-		const n5 = x > 0 && y < level.length - 1 ? level[y + 1][x - 1] : empty;
-		const n6 = y < level.length - 1 ? level[y + 1][x] : empty;
-		const n7 = x < level[y].length - 1 && y < level.length - 1 ? level[y + 1][x + 1] : empty;
+		verts[i + 3] = ligthContrib[0];
+		verts[i + 4] = ligthContrib[1];
+		verts[i + 5] = ligthContrib[2];
+	}
 
-		if (tile.type === 0) {
-			// Floor.
-			const c0 = n0.type == 1 || n1.type == 1 || n3.type == 1 ? col1 : col0;
-			const c1 = n1.type == 1 || n2.type == 1 || n4.type == 1 ? col1 : col0;
-			const c2 = n4.type == 1 || n6.type == 1 || n7.type == 1 ? col1 : col0;
-			const c3 = n3.type == 1 || n5.type == 1 || n6.type == 1 ? col1 : col0;
+	console.log('Tri generation time:', performance.now() - t0);
+	console.log('Tris:', verts.length / attribCount / 3);
+	console.log('Verts:', verts.length / attribCount);
+}
 
-			pushQuad(verts, p0, p1, p2, p3, tex0[0], tex0[1], tex0[2], tex0[3], c0, c1, c2, c3);
-		} else if (tile.type === 1) {
-			// Wall.
-			if (n1.type == 0) {
-				pushQuad(verts, p0, p1, cp1, cp0, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
-			}
+compileLevel(level, lights, verts);
 
-			if (n4.type == 0) {
-				pushQuad(verts, p1, p2, cp2, cp1, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
-			}
+//------------------------------------------------------------------------------------------------
+// Render helpers.
+//------------------------------------------------------------------------------------------------
+function getBarycentric(p, a, b, c) {
+	const v0 = vec2.create();
+	vec2.subtract(v0, b, a);
+	const v1 = vec2.create();
+	vec2.subtract(v1, c, a);
+	const v2 = vec2.create();
+	vec2.subtract(v2, p, a);
 
-			if (n6.type == 0) {
-				pushQuad(verts, p2, p3, cp3, cp2, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
-			}
+	const d00 = vec2.dot(v0, v0);
+	const d01 = vec2.dot(v0, v1);
+	const d11 = vec2.dot(v1, v1);
+	const d20 = vec2.dot(v2, v0);
+	const d21 = vec2.dot(v2, v1);
+	const denom = d00 * d11 - d01 * d01;
 
-			if (n3.type == 0) {
-				pushQuad(verts, p3, p0, cp0, cp3, tex0[0], tex0[1], tex0[2], tex0[3], col1, col1, col0, col0);
-			}
+	const result = vec3.create();
+	result[0] = (d11 * d20 - d01 * d21) / denom;
+	result[1] = (d00 * d21 - d01 * d20) / denom;
+	result[2] = 1.0 - result[0] - result[1];
 
-			const texRoof = tex[17];
-			pushQuad(verts, cp0, cp1, cp2, cp3, texRoof[0], texRoof[1], texRoof[2], texRoof[3], col0, col0, col0, col0);
+	return result;
+}
+
+// NOTE: In pixel space.
+function drawLine(x0, y0, x1, y1, frameBuffer, color) {
+	x0 = Math.floor(x0);
+	y0 = Math.floor(y0);
+	x1 = Math.floor(x1);
+	y1 = Math.floor(y1);
+
+	const dx = Math.abs(x1 - x0);
+	const dy = Math.abs(y1 - y0);
+	const sx = x0 < x1 ? 1 : -1;
+	const sy = y0 < y1 ? 1 : -1;
+	let err = dx - dy;
+
+	const cR = color[0] * 255;
+	const cG = color[1] * 255;
+	const cB = color[2] * 255;
+
+	while (true) {
+		// TODO: Prefer to clip line to viewport size.
+		if (x0 >= 0 && x0 < canvas.width && y0 >= 0 && y0 < canvas.height) {
+			const index = (y0 * canvas.width + x0) * 4;
+			frameBuffer[index] = cR;
+			frameBuffer[index + 1] = cG;
+			frameBuffer[index + 2] = cB;
 		}
 
-		// Ceiling.
-		const texRoof = tex[18];
-		const rp0 = [x + offsetX, y + offsetY, 2];
-		const rp1 = [x + offsetX + 1, y + offsetY, 2];
-		const rp2 = [x + offsetX + 1, y + offsetY + 1, 2];
-		const rp3 = [x + offsetX, y + offsetY + 1, 2];
-		pushQuad(verts, rp3, rp2, rp1, rp0, texRoof[0], texRoof[1], texRoof[2], texRoof[3], col0, col0, col0, col0);
+		if (x0 === x1 && y0 === y1) {
+			break;
+		}
+
+		const e2 = 2 * err;
+		if (e2 > -dy) {
+			err -= dy;
+			x0 += sx;
+		}
+
+		if (e2 < dx) {
+			err += dx;
+			y0 += sy;
+		}
 	}
 }
 
-// Apply lights.
-for (let i = 0; i < verts.length; i += attribCount) {
-	const p = vec3.fromValues(verts[i], verts[i + 1], verts[i + 2]);
-	const n = vec3.fromValues(verts[i + 8], verts[i + 9], verts[i + 10]);
-	const c = vec3.fromValues(verts[i + 3], verts[i + 4], verts[i + 5]);
-
-	const ligthContrib = vec3.create();
-
-	for (let j = 0; j < lights.length; j++) {
-		const l = lights[j];
-		const lDir = vec3.subtract(vec3.create(), l.pos, p);
-		vec3.normalize(lDir, lDir);
-
-		const dot = vec3.dot(n, lDir);
-		if (dot <= 0) {
-			continue;
-		}
-
-		const lightColor = vec3.scale(vec3.create(), l.color, dot);
-
-		// Inverse square falloff.
-		const distSqr = vec3.squaredDistance(l.pos, p);
-		const falloff = 1 / distSqr;
-		vec3.scale(lightColor, lightColor, falloff);
-
-		vec3.add(ligthContrib, ligthContrib, lightColor);
+function clearFrameBuffer(frameBuffer, color) {
+	for (let i = 0; i < frameBuffer.length; i += 4) {
+		frameBuffer[i] = color[0];
+		frameBuffer[i + 1] = color[1];
+		frameBuffer[i + 2] = color[2];
+		frameBuffer[i + 3] = 255;
 	}
-
-	// Add ambient.
-	vec3.add(ligthContrib, ligthContrib, vec3.fromValues(0.3, 0.3, 0.3));
-
-	// Add occlusion.
-	vec3.multiply(ligthContrib, ligthContrib, c);
-
-	verts[i + 3] = ligthContrib[0];
-	verts[i + 4] = ligthContrib[1];
-	verts[i + 5] = ligthContrib[2];
 }
 
-console.log('Tri generation time:', performance.now() - t0);
-console.log('Tris:', verts.length / attribCount / 3);
-console.log('Verts:', verts.length / attribCount);
-
-const numPrims = verts.length / attribCount / 3;
+//------------------------------------------------------------------------------------------------
+// App state.
+//------------------------------------------------------------------------------------------------
+const showWireframe = false;
 
 const startTime = Date.now();
 let lastFrameTime = startTime;
-
-const showWireframe = false;
-
 let frameTimeFiltered = 0;
 
-let camX = 0; //Math.sin((Date.now() - startTime) * 0.0005) * 2.0;
-let camY = 0; //Math.cos((Date.now() - startTime) * 0.0005) * 2.0;
-let camZ = 2.0;
+let camPosition = [-0.84, 1.72, 1.45];
 let camRotX = 45;
 let camRotY = 0;
-
 let cameraWorldPos;
 let cameraWorldDir;
 
-function renderFrame() {
+//------------------------------------------------------------------------------------------------
+// Main loop.
+//------------------------------------------------------------------------------------------------
+function mainLoop() {
+	//------------------------------------------------------------------------------------------------
+	// State update.
+	//------------------------------------------------------------------------------------------------
 	const currentTime = Date.now();
 	const deltaTime = currentTime - lastFrameTime;
 	lastFrameTime = currentTime;
 
 	if (mouseDown) {
-		const camWorldLeft = vec3.fromValues(cameraWorldDir[1], -cameraWorldDir[0], 0);
+		const camWorldForward = vec3.clone(cameraWorldDir);
+		const camWorldLeft = vec3.cross(vec3.create(), cameraWorldDir, [0, 0, 1]);
 
 		const moveDir = vec3.fromValues(0, 0, 0);
 
 		if (keyState.forward) {
-			vec3.add(moveDir, moveDir, cameraWorldDir);
+			vec3.add(moveDir, moveDir, camWorldForward);
 		}
 
 		if (keyState.backward) {
-			vec3.subtract(moveDir, moveDir, cameraWorldDir);
+			vec3.subtract(moveDir, moveDir, camWorldForward);
 		}
 
 		if (keyState.left) {
@@ -392,53 +487,43 @@ function renderFrame() {
 		}
 
 		vec3.normalize(moveDir, moveDir);
-
-		camX += moveDir[0] * deltaTime * 0.001;
-		camY += moveDir[1] * deltaTime * 0.001;
-		camZ += moveDir[2] * deltaTime * 0.001;
+		vec3.add(camPosition, camPosition, vec3.scale(moveDir, moveDir, deltaTime * 0.001));
 	}
 
-	// Clear.
-	let t0 = performance.now();
-	for (let i = 0; i < frameBuffer.length; i += 4) {
-		frameBuffer[i] = 99;
-		frameBuffer[i + 1] = 72;
-		frameBuffer[i + 2] = 61;
-		frameBuffer[i + 3] = 255;
-		// frameBuffer[i] = 61;
-		// frameBuffer[i + 1] = 72;
-		// frameBuffer[i + 2] = 99;
-	}
-	// console.log('Clear:', performance.now() - t0);
-
+	// Projection matrix.
 	const nearPlane = 0.1;
 	const farPlane = 5;
-
-	// Projection matrix
 	const projMat = mat4.perspective(mat4.create(), Math.PI / 2, canvas.width / canvas.height, nearPlane, farPlane);
-	// const viewMat = mat4.lookAt(mat4.create(), vec3.fromValues(camX, camY, 2.0), [0, 0, 0], [0, 0, -1]);
-	// console.log(viewMat2);
-	// const viewMat = mat4.fromRotationTranslation(mat4.create(), quat.fromEuler(quat.create(), 45, 45, 0), vec3.fromValues(-camX, -camY, -camZ));
-	const viewMat = mat4.fromTranslation(mat4.create(), vec3.fromValues(-camX, -camY, -camZ));
+
+	// View matrix.
+	const viewMat = mat4.fromTranslation(mat4.create(), vec3.fromValues(-camPosition[0], -camPosition[1], -camPosition[2]));
 	const viewRotY = mat4.fromZRotation(mat4.create(), glMatrix.glMatrix.toRadian(camRotY));
 	const viewRotX = mat4.fromXRotation(mat4.create(), glMatrix.glMatrix.toRadian(camRotX));
 	mat4.multiply(viewRotX, viewRotX, viewRotY);
-
 	mat4.multiply(viewMat, viewRotX, viewMat);
 
 	const viewProj = mat4.multiply(mat4.create(), projMat, viewMat);
 
+	// Extract camera world position and direction from view matrix.
 	mat4.invert(viewMat, viewMat);
-
 	cameraWorldPos = vec3.fromValues(viewMat[12], viewMat[13], viewMat[14]);
 	cameraWorldDir = vec3.fromValues(-viewMat[8], -viewMat[9], -viewMat[10]);
 	vec3.normalize(cameraWorldDir, cameraWorldDir);
 
+	//------------------------------------------------------------------------------------------------
+	// Rendering.
+	//------------------------------------------------------------------------------------------------
+	const numPrims = verts.length / attribCount / 3;
+
+	clearFrameBuffer(frameBuffer, [99, 72, 61]);
+
+	//------------------------------------------------------------------------------------------------
+	// Triangle culling.
+	//------------------------------------------------------------------------------------------------
 	const drawList = [];
 	const wireframeLineList = [];
 
-	// Triangle culling.
-	t0 = performance.now();
+	let t0 = performance.now();
 	for (let i = 0; i < numPrims; i++) {
 		// Backface cull.
 		const startIdx = i * attribCount * 3;
@@ -487,7 +572,9 @@ function renderFrame() {
 	drawList.sort((a, b) => b.dist - a.dist);
 	// console.log('Tri sort:', performance.now() - t0);
 
-	// Assume each triangle is each unique 3 verts.
+	//------------------------------------------------------------------------------------------------
+	// Rasterization.
+	//------------------------------------------------------------------------------------------------
 	t0 = performance.now();
 	for (let prim = 0; prim < drawList.length; prim++) {
 		let startIdx = drawList[prim].idx * attribCount * 3;
@@ -705,80 +792,19 @@ function renderFrame() {
 		}
 	}
 
+	//------------------------------------------------------------------------------------------------
+	// Flip buffer and draw debug info.
+	//------------------------------------------------------------------------------------------------
 	context.putImageData(imageData, 0, 0);
 
 	context.fillStyle = 'rgb(255, 255, 255)';
 	context.font = '10px monospace';
 	context.fillText(frameTimeFiltered.toFixed(1) + 'ms', 5, 10);
 	context.fillText('Tris: ' + drawList.length + '/' + numPrims, 5, 20);
+	context.fillText(camPosition[0].toFixed(2) + ', ' + camPosition[1].toFixed(2) + ', ' + camPosition[2].toFixed(2), 5, 30);
+	context.fillText(camRotX.toFixed(2) + ', ' + camRotY.toFixed(2), 5, 40);
 
-	requestAnimationFrame(renderFrame);
+	requestAnimationFrame(mainLoop);
 }
 
-requestAnimationFrame(renderFrame);
-
-// function getBarycentric(p, a, b, c) {
-// 	const v0 = vec3.create();
-// 	vec3.subtract(v0, b, a);
-// 	const v1 = vec3.create();
-// 	vec3.subtract(v1, c, a);
-// 	const v2 = vec3.create();
-// 	vec3.subtract(v2, p, a);
-
-// 	const d00 = vec3.dot(v0, v0);
-// 	const d01 = vec3.dot(v0, v1);
-// 	const d11 = vec3.dot(v1, v1);
-// 	const d20 = vec3.dot(v2, v0);
-// 	const d21 = vec3.dot(v2, v1);
-// 	const denom = d00 * d11 - d01 * d01;
-
-// 	const result = vec3.create();
-// 	result[0] = (d11 * d20 - d01 * d21) / denom;
-// 	result[1] = (d00 * d21 - d01 * d20) / denom;
-// 	result[2] = 1.0 - result[0] - result[1];
-
-// 	return result;
-// }
-
-// NOTE: In pixel space.
-function drawLine(x0, y0, x1, y1, frameBuffer, color) {
-	x0 = Math.floor(x0);
-	y0 = Math.floor(y0);
-	x1 = Math.floor(x1);
-	y1 = Math.floor(y1);
-
-	const dx = Math.abs(x1 - x0);
-	const dy = Math.abs(y1 - y0);
-	const sx = x0 < x1 ? 1 : -1;
-	const sy = y0 < y1 ? 1 : -1;
-	let err = dx - dy;
-
-	const cR = color[0] * 255;
-	const cG = color[1] * 255;
-	const cB = color[2] * 255;
-
-	while (true) {
-		// TODO: Prefer to clip line to viewport size.
-		if (x0 >= 0 && x0 < canvas.width && y0 >= 0 && y0 < canvas.height) {
-			const index = (y0 * canvas.width + x0) * 4;
-			frameBuffer[index] = cR;
-			frameBuffer[index + 1] = cG;
-			frameBuffer[index + 2] = cB;
-		}
-
-		if (x0 === x1 && y0 === y1) {
-			break;
-		}
-
-		const e2 = 2 * err;
-		if (e2 > -dy) {
-			err -= dy;
-			x0 += sx;
-		}
-
-		if (e2 < dx) {
-			err += dx;
-			y0 += sy;
-		}
-	}
-}
+requestAnimationFrame(mainLoop);
