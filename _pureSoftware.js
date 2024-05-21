@@ -445,14 +445,10 @@ let camRotY = 0;
 let cameraWorldPos;
 let cameraWorldDir;
 
-const vertSizeBytes = 16 * 4;
-const triSizeBytes = 3 * vertSizeBytes;
-// const tempTriBuffer = 
-
 //------------------------------------------------------------------------------------------------
 // Main loop.
 //------------------------------------------------------------------------------------------------
-async function mainLoop() {
+function mainLoop() {
 	//------------------------------------------------------------------------------------------------
 	// State update.
 	//------------------------------------------------------------------------------------------------
@@ -511,14 +507,13 @@ async function mainLoop() {
 	//------------------------------------------------------------------------------------------------
 	const numPrims = verts.length / attribCount / 3;
 
-	// clearFrameBuffer(frameBuffer, [99, 72, 61]);
+	clearFrameBuffer(frameBuffer, [99, 72, 61]);
 
 	//------------------------------------------------------------------------------------------------
 	// Triangle culling.
 	//------------------------------------------------------------------------------------------------
 	const drawList = [];
 	const wireframeLineList = [];
-	const tempTri = new Float32Array(state.tempTriBuffer);
 
 	let t0 = performance.now();
 	for (let i = 0; i < numPrims; i++) {
@@ -559,39 +554,7 @@ async function mainLoop() {
 			// Get distance to camera.
 			const distSqr = vec3.squaredDistance(cameraWorldPos, avgPos);
 
-			const triIdx = drawList.length;
 			drawList.push({ idx: i, dist: distSqr });
-
-			// Put tri in state tri buffer.
-			// Project verts to screenspace.
-			mat4.multiply(aT, viewProj, aT);
-			mat4.multiply(bT, viewProj, bT);
-			mat4.multiply(cT, viewProj, cT);
-
-			// Perspective divide.
-			const a = vec3.fromValues(aT[0] / aT[3], aT[1] / aT[3], aT[2] / aT[3]);
-			const b = vec3.fromValues(bT[0] / bT[3], bT[1] / bT[3], bT[2] / bT[3]);
-			const c = vec3.fromValues(cT[0] / cT[3], cT[1] / cT[3], cT[2] / cT[3]);
-
-			// Normalize to viewport.
-			a[0] = (a[0] + 1) / 2;
-			a[1] = (a[1] + 1) / 2;
-
-			b[0] = (b[0] + 1) / 2;
-			b[1] = (b[1] + 1) / 2;
-
-			c[0] = (c[0] + 1) / 2;
-			c[1] = (c[1] + 1) / 2;
-
-			tempTri[triIdx * 48 + 0] = a[0];
-			tempTri[triIdx * 48 + 1] = a[1];
-			tempTri[triIdx * 48 + 8] = ((i * 1000) % 256) / 255;
-			tempTri[triIdx * 48 + 9] = ((i * 2554) % 256) / 255;
-			tempTri[triIdx * 48 + 10] = ((i * 5353) % 256) / 255;
-			tempTri[triIdx * 48 + (16 * 1) + 0] = b[0];
-			tempTri[triIdx * 48 + (16 * 1) + 1] = b[1];
-			tempTri[triIdx * 48 + (16 * 2) + 0] = c[0];
-			tempTri[triIdx * 48 + (16 * 2) + 1] = c[1];
 		}
 	}
 	// console.log('Tri initial cull:', performance.now() - t0);
@@ -601,90 +564,250 @@ async function mainLoop() {
 	drawList.sort((a, b) => b.dist - a.dist);
 	// console.log('Tri sort:', performance.now() - t0);
 
-	// tempTri[0 * 48 + 0] = 0;
-	// tempTri[0 * 48 + 1] = 0;
-	// tempTri[0 * 48 + 8] = 1;
-	// tempTri[0 * 48 + (16 * 1) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 1) + 1] = 0;
-	// tempTri[0 * 48 + (16 * 2) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 2) + 1] = 0.5;
-
 	//------------------------------------------------------------------------------------------------
 	// Rasterization.
 	//------------------------------------------------------------------------------------------------
-	const sceneDataRawU32 = new Uint32Array(state.sceneDataRaw);
-	sceneDataRawU32[0] = drawList.length;
-
 	t0 = performance.now();
-	await wgpuRender();
-	const frameTime = performance.now() - t0;
+	for (let prim = 0; prim < drawList.length; prim++) {
+		let startIdx = drawList[prim].idx * attribCount * 3;
+		const aT = vec4.fromValues(verts[startIdx], verts[startIdx + 1], verts[startIdx + 2], 1);
+		const aC = vec3.fromValues(verts[startIdx + 3], verts[startIdx + 4], verts[startIdx + 5]);
+		const aUv = vec2.fromValues(verts[startIdx + 6], verts[startIdx + 7]);
+		const aN = vec3.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10]);
 
-	frameTimeFiltered = 0.9 * frameTimeFiltered + 0.1 * frameTime;
-	let debugStr = frameTimeFiltered.toFixed(2) + ' ms';
-	debugStr += ' Tris: ' + drawList.length + '/' + numPrims;
-	debugStr += ' Cam: ' + camPosition[0].toFixed(2) + ', ' + camPosition[1].toFixed(2) + ', ' + camPosition[2].toFixed(2) + ' ' + camRotX.toFixed(2) + ', ' + camRotY.toFixed(2);
-	debugText.textContent = debugStr;
+		startIdx += attribCount;
+		const bT = vec4.fromValues(verts[startIdx], verts[startIdx + 1], verts[startIdx + 2], 1);
+		const bC = vec3.fromValues(verts[startIdx + 3], verts[startIdx + 4], verts[startIdx + 5]);
+		const bUv = vec2.fromValues(verts[startIdx + 6], verts[startIdx + 7]);
+		const bN = vec3.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10]);
+
+		startIdx += attribCount;
+		const cT = vec4.fromValues(verts[startIdx], verts[startIdx + 1], verts[startIdx + 2], 1);
+		const cC = vec3.fromValues(verts[startIdx + 3], verts[startIdx + 4], verts[startIdx + 5]);
+		const cUv = vec2.fromValues(verts[startIdx + 6], verts[startIdx + 7]);
+		const cN = vec3.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10]);
+
+		// Project verts to screenspace.
+		mat4.multiply(aT, viewProj, aT);
+		mat4.multiply(bT, viewProj, bT);
+		mat4.multiply(cT, viewProj, cT);
+
+		// Perspective divide.
+		const a = vec3.fromValues(aT[0] / aT[3], aT[1] / aT[3], aT[2] / aT[3]);
+		const b = vec3.fromValues(bT[0] / bT[3], bT[1] / bT[3], bT[2] / bT[3]);
+		const c = vec3.fromValues(cT[0] / cT[3], cT[1] / cT[3], cT[2] / cT[3]);
+
+		// Clip against near plane.
+		// NOTE: Cheap removal of triangles behind camera. Should already be culled by cheap frustum culling.
+		if (aT[2] < 0 || bT[2] < 0 || cT[2] < 0) {
+			continue;
+		}
+
+		// Normalize to viewport.
+		a[0] = (a[0] + 1) / 2;
+		a[1] = (a[1] + 1) / 2;
+
+		b[0] = (b[0] + 1) / 2;
+		b[1] = (b[1] + 1) / 2;
+
+		c[0] = (c[0] + 1) / 2;
+		c[1] = (c[1] + 1) / 2;
+
+		// Get bounds of triangle.
+		const min = vec3.set(vec3.create(), Infinity, Infinity, Infinity);
+		const max = vec3.set(vec3.create(), -Infinity, -Infinity, -Infinity);
+
+		vec3.min(min, min, a);
+		vec3.max(max, max, a);
+
+		vec3.min(min, min, b);
+		vec3.max(max, max, b);
+
+		vec3.min(min, min, c);
+		vec3.max(max, max, c);
+
+		const xStart = Math.max(0, Math.floor(min[0] * canvas.width));
+		const xEnd = Math.min(canvas.width, Math.ceil(max[0] * canvas.width));
+
+		const yStart = Math.max(0, Math.floor(min[1] * canvas.height));
+		const yEnd = Math.min(canvas.height, Math.ceil(max[1] * canvas.height));
+
+		// Raster bounds.
+		// drawLine(xStart, yStart, xEnd, yStart, frameBuffer, cG);
+		// drawLine(xEnd, yStart, xEnd, yEnd, frameBuffer, cG);
+		// drawLine(xEnd, yEnd, xStart, yEnd, frameBuffer, cG);
+		// drawLine(xStart, yEnd, xStart, yStart, frameBuffer, cG);
+
+		const ab = vec3.subtract(vec3.create(), b, a);
+		const bc = vec3.subtract(vec3.create(), c, b);
+		const ca = vec3.subtract(vec3.create(), a, c);
+
+		const n1 = vec3.fromValues(-ab[1], ab[0], 0.0);
+		const n2 = vec3.fromValues(-bc[1], bc[0], 0.0);
+		const n3 = vec3.fromValues(-ca[1], ca[0], 0.0);
+
+		// Point vs edge prep.
+		const p = vec3.create();
+		const ap = vec3.create();
+		const bp = vec3.create();
+		const cp = vec3.create();
+
+		// Barycentric prep.
+		const v0 = vec2.subtract(vec2.create(), b, a);
+		const v1 = vec2.subtract(vec2.create(), c, a);
+		const d00 = vec2.dot(v0, v0);
+		const d01 = vec2.dot(v0, v1);
+		const d11 = vec2.dot(v1, v1);
+		const denom = d00 * d11 - d01 * d01;
+		const bary = vec3.create();
+		const baryI = vec3.create();
+		const v2 = vec2.create();
+		const w0 = 1 / aT[3];
+		const w1 = 1 / bT[3];
+		const w2 = 1 / cT[3];
+
+		for (let y = yStart; y < yEnd; y++) {
+			for (let x = xStart; x < xEnd; x++) {
+				const u = x / canvas.width;
+				const v = y / canvas.height;
+
+				vec3.set(p, u, v, 1);
+
+				vec3.subtract(ap, p, a);
+				vec3.subtract(bp, p, b);
+				vec3.subtract(cp, p, c);
+
+				const dot1 = vec3.dot(ap, n1);
+				const dot2 = vec3.dot(bp, n2);
+				const dot3 = vec3.dot(cp, n3);
+
+				if (dot1 >= 0 && dot2 >= 0 && dot3 >= 0) {
+					// Calc bary coords.
+					vec2.subtract(v2, p, a);
+					const d20 = vec2.dot(v2, v0);
+					const d21 = vec2.dot(v2, v1);
+					baryI[1] = (d11 * d20 - d01 * d21) / denom;
+					baryI[2] = (d00 * d21 - d01 * d20) / denom;
+					baryI[0] = 1.0 - baryI[1] - baryI[2];
+
+					// Perspective correct bary.
+					const w = 1 / (baryI[0] * w0 + baryI[1] * w1 + baryI[2] * w2);
+
+					bary[0] = baryI[0] * w * w0;
+					bary[1] = baryI[1] * w * w1;
+					bary[2] = baryI[2] * w * w2;
+
+					const fragColor = vec3.create();
+
+					// Vertex colors.
+					fragColor[0] = aC[0] * bary[0] + bC[0] * bary[1] + cC[0] * bary[2];
+					fragColor[1] = aC[1] * bary[0] + bC[1] * bary[1] + cC[1] * bary[2];
+					fragColor[2] = aC[2] * bary[0] + bC[2] * bary[1] + cC[2] * bary[2];
+
+					// UVs.
+					// bary[0] *= 255;
+					// bary[1] *= 255;
+					// bary[2] *= 255;
+					// frameBuffer[index] = aUv[0] * bary[0] + bUv[0] * bary[1] + cUv[0] * bary[2];
+					// frameBuffer[index + 1] = aUv[1] * bary[0] + bUv[1] * bary[1] + cUv[1] * bary[2];
+					// frameBuffer[index + 2] = 0;
+
+					// Normals.
+					// const n = vec3.create();
+					// n[0] = aN[0] * bary[0] + bN[0] * bary[1] + cN[0] * bary[2];
+					// n[1] = aN[1] * bary[0] + bN[1] * bary[1] + cN[1] * bary[2];
+					// n[2] = aN[2] * bary[0] + bN[2] * bary[1] + cN[2] * bary[2];
+					// vec3.normalize(n, n);
+					// fragColor[0] = (n[0] * 0.5 + 0.5) * 255;
+					// fragColor[1] = (n[1] * 0.5 + 0.5) * 255;
+					// fragColor[2] = (n[2] * 0.5 + 0.5) * 255;
+
+					// Texture sample.
+					const texU = aUv[0] * bary[0] + bUv[0] * bary[1] + cUv[0] * bary[2];
+					const texV = aUv[1] * bary[0] + bUv[1] * bary[1] + cUv[1] * bary[2];
+					const texX = Math.floor(texSheet1.width * texU);
+					const texY = Math.floor(texSheet1.height * texV);
+					const texIndex = (texY * texSheet1.width + texX) * 4;
+					// NOTE: In 0 - 255 range.
+					const texColor = vec3.fromValues(texSheet1.data[texIndex], texSheet1.data[texIndex + 1], texSheet1.data[texIndex + 2]);
+
+					vec3.multiply(fragColor, fragColor, texColor);
+					// fragColor[0] *= 255;
+					// fragColor[1] *= 255;
+					// fragColor[2] *= 255;
+
+					// Depth.
+					const depth = aT[2] * bary[0] + bT[2] * bary[1] + cT[2] * bary[2];
+
+					// Fog.
+					const fog = 1.0 - Math.min(1.0, Math.max(0.0, depth * 0.3));
+					// fragColor[0] = fragColor[0] * fog + 61 * (1 - fog);
+					// fragColor[1] = fragColor[1] * fog + 72 * (1 - fog);
+					// fragColor[2] = fragColor[2] * fog + 99 * (1 - fog);
+					fragColor[0] = fragColor[0] * fog + 99 * (1 - fog);
+					fragColor[1] = fragColor[1] * fog + 72 * (1 - fog);
+					fragColor[2] = fragColor[2] * fog + 61 * (1 - fog);
+
+					// Write final fragment.
+					const index = (y * canvas.width + x) * 4;
+					frameBuffer[index] = fragColor[0];
+					frameBuffer[index + 1] = fragColor[1];
+					frameBuffer[index + 2] = fragColor[2];
+				}
+			}
+		}
+
+		if (showWireframe) {
+			a[0] = a[0] * canvas.width;
+			a[1] = a[1] * canvas.height;
+			b[0] = b[0] * canvas.width;
+			b[1] = b[1] * canvas.height;
+			c[0] = c[0] * canvas.width;
+			c[1] = c[1] * canvas.height;
+			// wireframeLineList.push(a[0], a[1], b[0], b[1]);
+			// wireframeLineList.push(b[0], b[1], c[0], c[1]);
+			// wireframeLineList.push(c[0], c[1], a[0], a[1]);
+			drawLine(a[0], a[1], b[0], b[1], frameBuffer, col0);
+			drawLine(b[0], b[1], c[0], c[1], frameBuffer, col0);
+			drawLine(c[0], c[1], a[0], a[1], frameBuffer, col0);
+			// drawLine(a[0], a[1], b[0], b[1], frameBuffer, col0);
+			// drawLine(b[0], b[1], c[0], c[1], frameBuffer, col0);
+			// drawLine(c[0], c[1], a[0], a[1], frameBuffer, col0);
+		}
+	}
+	// console.log('Draw:', (performance.now() - t0).toFixed(1) + 'ms');
+	frameTimeFiltered = 0.9 * frameTimeFiltered + 0.1 * (performance.now() - t0);
+
+	if (showWireframe) {
+		for (let i = 0; i < wireframeLineList.length; i += 4) {
+			drawLine(wireframeLineList[i], wireframeLineList[i + 1], wireframeLineList[i + 2], wireframeLineList[i + 3], frameBuffer, cBlack);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	// Flip buffer and draw debug info.
+	//------------------------------------------------------------------------------------------------
+	context.putImageData(frameBufferImageData, 0, 0);
+
+	context.fillStyle = 'rgb(255, 255, 255)';
+	context.font = '10px monospace';
+	context.fillText(frameTimeFiltered.toFixed(1) + 'ms', 5, 10);
+	context.fillText('Tris: ' + drawList.length + '/' + numPrims, 5, 20);
+	context.fillText(camPosition[0].toFixed(2) + ', ' + camPosition[1].toFixed(2) + ', ' + camPosition[2].toFixed(2), 5, 30);
+	context.fillText(camRotX.toFixed(2) + ', ' + camRotY.toFixed(2), 5, 40);
 
 	requestAnimationFrame(mainLoop);
 }
 
-const state = {
-	tempTriBuffer: new ArrayBuffer(8000 * triSizeBytes),
-	sceneDataRaw: new ArrayBuffer(64),
-};
+//------------------------------------------------------------------------------------------------
+// Frame buffer.
+//------------------------------------------------------------------------------------------------
+// const context = canvas.getContext('2d');
+// context.fillStyle = 'rgb(61, 72, 99)';
+// context.fillRect(0, 0, canvas.width, canvas.height);
+// const frameBufferImageData = context.createImageData(canvas.width, canvas.height);
+// const frameBuffer = frameBufferImageData.data;
 
-async function main() {
-	await wgpuInit(canvas, state);
+// requestAnimationFrame(mainLoop);
 
-	const triangleData = [];
-
-	// Push random triangle data
-	for (let i = 0; i < 8000; i++) {
-		const offsetX = Math.random() * 1.0;
-		const offsetY = Math.random() * 1.0;
-		const sizeX = Math.random() * 0.2 + 0.1;
-		const sizeY = Math.random() * 0.2 + 0.1;
-
-		const normal = [0, 0, 1, 0];
-
-		// V0.
-		{
-			const pos = [offsetX, offsetY, 0, 1];
-			const color = [Math.random(), Math.random(), Math.random(), 1];
-			const uv = [0, 0, 0, 0];
-
-			triangleData.push(...pos, ...normal, ...color, ...uv);
-		}
-
-		// V1.
-		{
-			const pos = [offsetX + sizeX, offsetY, 0, 1];
-			const color = [Math.random(), Math.random(), Math.random(), 1];
-			const uv = [0, 0, 0, 0];
-
-			triangleData.push(...pos, ...normal, ...color, ...uv);
-		}
-
-		// V2.
-		{
-			const pos = [offsetX, offsetY + sizeY, 0, 1];
-			const color = [Math.random(), Math.random(), Math.random(), 1];
-			const uv = [0, 0, 0, 0];
-
-			triangleData.push(...pos, ...normal, ...color, ...uv);
-		}
-	}
-
-	// const tempTri = new Float32Array(state.tempTriBuffer);
-	// tempTri[0 * 48 + 0] = 0;
-	// tempTri[0 * 48 + 1] = 0;
-	// tempTri[0 * 48 + 8] = 1;
-	// tempTri[0 * 48 + (16 * 1) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 1) + 1] = 0;
-	// tempTri[0 * 48 + (16 * 2) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 2) + 1] = 0.5;
-
-	mainLoop();
-}
-
-main();
+mainWebGpu(canvas);

@@ -3,10 +3,13 @@
 	<head>
 		<title>WebGPU software renderer</title>
 	</head>
-	<body style="background-color: rgb(43, 44, 46)">
-		<canvas width="500" height="375" style="image-rendering: pixelated; width: 1000px; height: 750px"></canvas>
+	<body style="background-color: rgb(43, 44, 46); color: rgb(230, 230, 230); font-family: sans-serif">
+		<!-- <canvas width="500" height="375" style="image-rendering: pixelated; width: 1000px; height: 750px"></canvas> -->
+		<canvas width="512" height="384" style="image-rendering: pixelated; width: 1024px; height: 768px"></canvas>
 		<img id="texture-sheet" src="tr_level1.png" style="display: none">
+		<p id="debug-text">Debug text</p>
 		<script src="gl-matrix-min.js"></script>
+		<script src="webgpu.js"></script>
 		<script src="app.js"></script>
 	</body>
 </html>
