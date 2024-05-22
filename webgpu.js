@@ -113,11 +113,30 @@ async function wgpuInit(canvas, state) {
 			fn computeMain(@builtin(global_invocation_id) invokeId: vec3u) {
 				let tileIdx = invokeId.x + invokeId.y * ${TILES_X.toFixed(0)};
 				let tilePxStart = vec2<u32>(invokeId.x * ${TILE_SIZE}, invokeId.y * ${TILE_SIZE});
-				let tilePxEnd = tilePxStart + vec2<u32>(${TILE_SIZE} - 1, ${TILE_SIZE} - 1);
-				
+				let tilePxEnd = tilePxStart + vec2<u32>(${TILE_SIZE}, ${TILE_SIZE});
+
+				var drawnTriCount = 0;
+
 				for (var t: u32 = 0; t < sceneData.triCount; t = t + 1) {
 					// Get random color base on triangle index
 					let tri = triangle_list[t];
+					
+					// Get triangle bounds.
+					let boundsMin = min(min(tri.verts[0].position.xy, tri.verts[1].position.xy), tri.verts[2].position.xy);
+					let boundsMax = max(max(tri.verts[0].position.xy, tri.verts[1].position.xy), tri.verts[2].position.xy);
+
+					let boundsMinPx = vec2<u32>(boundsMin * vec2<f32>(${SCREEN_WIDTH}, ${SCREEN_HEIGHT}));
+					let boundsMaxPx = vec2<u32>(boundsMax * vec2<f32>(${SCREEN_WIDTH}, ${SCREEN_HEIGHT}) + vec2f(1, 1));
+
+					// Clamp triangle to tile.
+					let actualTilePxStart = max(tilePxStart, boundsMinPx);
+					let actualTilePxEnd = min(tilePxEnd, boundsMaxPx);
+
+					if (actualTilePxStart.x >= actualTilePxEnd.x || actualTilePxStart.y >= actualTilePxEnd.y) {
+						continue;
+					}
+
+					drawnTriCount++;
 					
 					let c0 = tri.verts[0].color;
 					let c1 = tri.verts[1].color;
@@ -131,17 +150,6 @@ async function wgpuInit(canvas, state) {
 					let n2 = vec2<f32>(-bc.y, bc.x);
 					let n3 = vec2<f32>(-ca.y, ca.x);
 
-					// Get triangle bounds.
-					let boundsMin = min(min(tri.verts[0].position.xy, tri.verts[1].position.xy), tri.verts[2].position.xy);
-					let boundsMax = max(max(tri.verts[0].position.xy, tri.verts[1].position.xy), tri.verts[2].position.xy);
-
-					let boundsMinPx = vec2<u32>(boundsMin * vec2<f32>(${SCREEN_WIDTH}, ${SCREEN_HEIGHT}));
-					let boundsMaxPx = vec2<u32>(boundsMax * vec2<f32>(${SCREEN_WIDTH}, ${SCREEN_HEIGHT}));
-
-					// Clamp triangle to tile.
-					let actualTilePxStart = max(tilePxStart, boundsMinPx);
-					let actualTilePxEnd = min(tilePxEnd, boundsMaxPx);
-
 					// Barycentric prep.
 					let v0 = (tri.verts[1].position - tri.verts[0].position).xy; // b - a;
 					let v1 = (tri.verts[2].position - tri.verts[0].position).xy; // c - a;
@@ -154,10 +162,10 @@ async function wgpuInit(canvas, state) {
 					let w2 = 1 / tri.verts[2].position.w;
 
 					// NOTE: Dynamic loop is ~2x slower than static loop, but culling here improves perf overall.
-					for (var pixelX: u32 = actualTilePxStart.x; pixelX <= actualTilePxEnd.x; pixelX = pixelX + 1) {
+					for (var pixelX: u32 = actualTilePxStart.x; pixelX < actualTilePxEnd.x; pixelX = pixelX + 1) {
 						let pixelX_u = f32(pixelX) / 512.0;
 
-						for (var pixelY: u32 = actualTilePxStart.y; pixelY <= actualTilePxEnd.y; pixelY = pixelY + 1) {
+						for (var pixelY: u32 = actualTilePxStart.y; pixelY < actualTilePxEnd.y; pixelY = pixelY + 1) {
 							let pixelY_v = f32(pixelY) / 384.0;
 							let p = vec2f(pixelX_u, pixelY_v);
 
@@ -200,15 +208,25 @@ async function wgpuInit(canvas, state) {
 								let texColor = tex_sheet_1.data[texIndex];
 
 								finalColor *= getTexColor(texColor);
+
+								// let drawnTriCount = saturate(f32(drawnTriCount) / 20);
+								// finalColor = vec4<f32>(mix(vec3f(0, 0, 0), vec3f(1, 0, 0), drawnTriCount), 1);
 								
 								textureStore(screenBuffer, vec2<u32>(pixelX, pixelY), finalColor);
 							}
 						}
 					}
-
 				}
-				
-				// Tile border, debug.
+
+				// NOTE: Debug intensity based on num tris drawn.
+				// for (var pixelX: u32 = 0; pixelX < 8; pixelX = pixelX + 1) {
+				// 	for (var pixelY: u32 = 0; pixelY < 8; pixelY = pixelY + 1) {
+				// 		let col = f32(drawnTriCount) / 30;
+				// 		textureStore(screenBuffer, vec2<u32>(tilePxStart.x + pixelX, tilePxStart.y + pixelY), vec4f(col, 0, 0, 1));
+				// 	}
+				// }
+
+				// NOTE: Tile border, debug.
 				// for (var p: u32 = 0; p < ${TILE_SIZE}; p = p + 1) {
 				// 	textureStore(screenBuffer, vec2<u32>(tilePxStart.x + p, tilePxStart.y), vec4<f32>(0.2, 0.2, 0.2, 1.0));
 				// 	textureStore(screenBuffer, vec2<u32>(tilePxStart.x, tilePxStart.y + p), vec4<f32>(0.2, 0.2, 0.2, 1.0));

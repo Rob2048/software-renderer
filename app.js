@@ -178,54 +178,54 @@ function calculateNormal(p0, p1, p2) {
 // Level management.
 //------------------------------------------------------------------------------------------------
 const level = [
-	[
-		{ type: 1, texId: 38 },
-		{ type: 1, texId: 38 },
-		{ type: 0, texId: 3 },
-		{ type: 1, texId: 38 },
-		{ type: 0, texId: 14 },
-	],
-	[
-		{ type: 1, texId: 38 },
-		{ type: 0, texId: 4 },
-		{ type: 0, texId: 3 },
-		{ type: 0, texId: 14 },
-		{ type: 0, texId: 14 },
-	],
-	[
-		{ type: 1, texId: 38 },
-		{ type: 0, texId: 4 },
-		{ type: 0, texId: 3 },
-		{ type: 0, texId: 14 },
-		{ type: 0, texId: 14 },
-	],
-	[
-		{ type: 1, texId: 38 },
-		{ type: 0, texId: 4 },
-		{ type: 0, texId: 3 },
-		{ type: 1, texId: 23 },
-		{ type: 0, texId: 14 },
-	],
-	[
-		{ type: 0, texId: 18 },
-		{ type: 0, texId: 21, texRot: 2 },
-		{ type: 0, texId: 3 },
-		{ type: 0, texId: 14 },
-		{ type: 0, texId: 14 },
-	],
-	[
-		{ type: 0, texId: 18 },
-		{ type: 0, texId: 3 },
-		{ type: 0, texId: 3 },
-		{ type: 0, texId: 14 },
-		{ type: 0, texId: 14 },
-	],
+	// [
+	// 	{ type: 1, texId: 38 },
+	// 	{ type: 1, texId: 38 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 1, texId: 38 },
+	// 	{ type: 0, texId: 14 },
+	// ],
+	// [
+	// 	{ type: 1, texId: 38 },
+	// 	{ type: 0, texId: 4 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 0, texId: 14 },
+	// 	{ type: 0, texId: 14 },
+	// ],
+	// [
+	// 	{ type: 1, texId: 38 },
+	// 	{ type: 0, texId: 4 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 0, texId: 14 },
+	// 	{ type: 0, texId: 14 },
+	// ],
+	// [
+	// 	{ type: 1, texId: 38 },
+	// 	{ type: 0, texId: 4 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 1, texId: 23 },
+	// 	{ type: 0, texId: 14 },
+	// ],
+	// [
+	// 	{ type: 0, texId: 18 },
+	// 	{ type: 0, texId: 21, texRot: 2 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 0, texId: 14 },
+	// 	{ type: 0, texId: 14 },
+	// ],
+	// [
+	// 	{ type: 0, texId: 18 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 0, texId: 3 },
+	// 	{ type: 0, texId: 14 },
+	// 	{ type: 0, texId: 14 },
+	// ],
 ];
 
-for (let i = 0; i < 30; ++i) {
+for (let i = 0; i < 40; ++i) {
 	const row = [];
 
-	for (let j = 0; j < 30; ++j) {
+	for (let j = 0; j < 40; ++j) {
 		const wall = Math.random() * 10 > 9 ? 1 : 0;
 		row.push({ type: wall, texId: Math.floor(Math.random() * 63) });
 	}
@@ -234,22 +234,21 @@ for (let i = 0; i < 30; ++i) {
 }
 
 const lights = [
-	{ pos: [0.5, -0.5, 1.5], color: [1, 0.8, 0.8] },
-	{ pos: [0.0, 2, 1.0], color: [0.8, 0.8, 1.0] },
-	{ pos: [0.0, 0.0, 1.0], color: [2.0, 0.8, 1.0] },
+	// { pos: [0.5, -0.5, 1.5], color: [1, 0.8, 0.8] },
+	// { pos: [0.0, 2, 1.0], color: [0.8, 0.8, 1.0] },
+	// { pos: [0.0, 0.0, 1.0], color: [2.0, 0.8, 1.0] },
 ];
 
 for (let i = 0; i < 100; ++i) {
-	lights.push({ pos: [Math.random() * 30 - 15, Math.random() * 30 - 15, 1.0], color: [Math.random(), Math.random(), Math.random()] });
-
+	lights.push({ pos: [Math.random() * 40, Math.random() * 40, 1.0], color: [Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5] });
 }
 
 function compileLevel(level, lights, verts) {
 	verts.length = 0;
 
 	let t0 = performance.now();
-	const offsetX = -level[0].length / 2;
-	const offsetY = -level.length / 2;
+	const offsetX = 0; //-level[0].length / 2;
+	const offsetY = 0; //-level.length / 2;
 
 	for (let y = 0; y < level.length; y++) {
 		for (let x = 0; x < level[y].length; x++) {
@@ -365,7 +364,7 @@ function compileLevel(level, lights, verts) {
 		}
 
 		// Add ambient.
-		vec3.add(ligthContrib, ligthContrib, vec3.fromValues(0.3, 0.3, 0.3));
+		vec3.add(ligthContrib, ligthContrib, vec3.fromValues(0.10, 0.12, 0.15));
 
 		// Multiply ambient occlusion.
 		vec3.multiply(ligthContrib, ligthContrib, occ);
@@ -513,12 +512,12 @@ async function mainLoop() {
 		}
 
 		vec3.normalize(moveDir, moveDir);
-		vec3.add(camPosition, camPosition, vec3.scale(moveDir, moveDir, deltaTime * 0.001));
+		vec3.add(camPosition, camPosition, vec3.scale(moveDir, moveDir, deltaTime * 0.01));
 	}
 
 	// Projection matrix.
 	const nearPlane = 0.1;
-	const farPlane = 20;
+	const farPlane = 100;
 	const projMat = mat4.perspective(mat4.create(), Math.PI / 2, canvas.width / canvas.height, nearPlane, farPlane);
 
 	// View matrix.
