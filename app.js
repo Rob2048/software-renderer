@@ -104,8 +104,6 @@ document.addEventListener('keyup', (event) => {
 //------------------------------------------------------------------------------------------------
 // Texture management.
 //------------------------------------------------------------------------------------------------
-const texSheet1 = getTexturePixelsFromDomElement('texture-sheet');
-
 function getTexturePixelsFromDomElement(elementName) {
 	const textureSheetDomElement = document.getElementById(elementName);
 
@@ -215,13 +213,36 @@ const level = [
 		{ type: 0, texId: 14 },
 		{ type: 0, texId: 14 },
 	],
+	[
+		{ type: 0, texId: 18 },
+		{ type: 0, texId: 3 },
+		{ type: 0, texId: 3 },
+		{ type: 0, texId: 14 },
+		{ type: 0, texId: 14 },
+	],
 ];
+
+for (let i = 0; i < 30; ++i) {
+	const row = [];
+
+	for (let j = 0; j < 30; ++j) {
+		const wall = Math.random() * 10 > 9 ? 1 : 0;
+		row.push({ type: wall, texId: Math.floor(Math.random() * 63) });
+	}
+
+	level.push(row);
+}
 
 const lights = [
 	{ pos: [0.5, -0.5, 1.5], color: [1, 0.8, 0.8] },
 	{ pos: [0.0, 2, 1.0], color: [0.8, 0.8, 1.0] },
 	{ pos: [0.0, 0.0, 1.0], color: [2.0, 0.8, 1.0] },
 ];
+
+for (let i = 0; i < 100; ++i) {
+	lights.push({ pos: [Math.random() * 30 - 15, Math.random() * 30 - 15, 1.0], color: [Math.random(), Math.random(), Math.random()] });
+
+}
 
 function compileLevel(level, lights, verts) {
 	verts.length = 0;
@@ -257,14 +278,23 @@ function compileLevel(level, lights, verts) {
 
 			// Get neightbours
 			const empty = { type: 99 };
-			const n0 = x > 0 && y > 0 ? level[y - 1][x - 1] : empty;
-			const n1 = y > 0 ? level[y - 1][x] : empty;
-			const n2 = x < level[y].length - 1 && y > 0 ? level[y - 1][x + 1] : empty;
-			const n3 = x > 0 ? level[y][x - 1] : empty;
-			const n4 = x < level[y].length - 1 ? level[y][x + 1] : empty;
-			const n5 = x > 0 && y < level.length - 1 ? level[y + 1][x - 1] : empty;
-			const n6 = y < level.length - 1 ? level[y + 1][x] : empty;
-			const n7 = x < level[y].length - 1 && y < level.length - 1 ? level[y + 1][x + 1] : empty;
+			let n0 = x > 0 && y > 0 ? level[y - 1][x - 1] : empty;
+			let n1 = y > 0 ? level[y - 1][x] : empty;
+			let n2 = x < level[y].length - 1 && y > 0 ? level[y - 1][x + 1] : empty;
+			let n3 = x > 0 ? level[y][x - 1] : empty;
+			let n4 = x < level[y].length - 1 ? level[y][x + 1] : empty;
+			let n5 = x > 0 && y < level.length - 1 ? level[y + 1][x - 1] : empty;
+			let n6 = y < level.length - 1 ? level[y + 1][x] : empty;
+			let n7 = x < level[y].length - 1 && y < level.length - 1 ? level[y + 1][x + 1] : empty;
+
+			n0 = n0 ? n0 : empty;
+			n1 = n1 ? n1 : empty;
+			n2 = n2 ? n2 : empty;
+			n3 = n3 ? n3 : empty;
+			n4 = n4 ? n4 : empty;
+			n5 = n5 ? n5 : empty;
+			n6 = n6 ? n6 : empty;
+			n7 = n7 ? n7 : empty;
 
 			if (tile.type === 0) {
 				// Floor.
@@ -438,6 +468,7 @@ const showWireframe = false;
 const startTime = Date.now();
 let lastFrameTime = startTime;
 let frameTimeFiltered = 0;
+let prepTimeFiltered = 0;
 
 let camPosition = [-0.84, 1.72, 1.45];
 let camRotX = 45;
@@ -447,7 +478,6 @@ let cameraWorldDir;
 
 const vertSizeBytes = 16 * 4;
 const triSizeBytes = 3 * vertSizeBytes;
-// const tempTriBuffer = 
 
 //------------------------------------------------------------------------------------------------
 // Main loop.
@@ -488,7 +518,7 @@ async function mainLoop() {
 
 	// Projection matrix.
 	const nearPlane = 0.1;
-	const farPlane = 5;
+	const farPlane = 20;
 	const projMat = mat4.perspective(mat4.create(), Math.PI / 2, canvas.width / canvas.height, nearPlane, farPlane);
 
 	// View matrix.
@@ -514,16 +544,18 @@ async function mainLoop() {
 	// clearFrameBuffer(frameBuffer, [99, 72, 61]);
 
 	//------------------------------------------------------------------------------------------------
-	// Triangle culling.
+	// Triangle culling and transform.
 	//------------------------------------------------------------------------------------------------
+	let t0 = performance.now();
+
 	const drawList = [];
 	const wireframeLineList = [];
-	const tempTri = new Float32Array(state.tempTriBuffer);
+	const tempTriBuffer = new Float32Array(state.tempTriBuffer);
+	const triBuffer = new Float32Array(state.triBuffer);
 
-	let t0 = performance.now();
 	for (let i = 0; i < numPrims; i++) {
 		// Backface cull.
-		const startIdx = i * attribCount * 3;
+		let startIdx = i * attribCount * 3;
 		const aT = vec4.fromValues(verts[startIdx], verts[startIdx + 1], verts[startIdx + 2], 1.0);
 		const aN = vec4.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10], 0.0);
 		const camToVert = vec3.subtract(vec3.create(), cameraWorldPos, aT);
@@ -550,6 +582,21 @@ async function mainLoop() {
 				continue;
 			}
 
+			startIdx = i * attribCount * 3;
+			const aC = vec3.fromValues(verts[startIdx + 3], verts[startIdx + 4], verts[startIdx + 5]);
+			const aUv = vec2.fromValues(verts[startIdx + 6], verts[startIdx + 7]);
+			const aN = vec3.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10]);
+
+			startIdx += attribCount;
+			const bC = vec3.fromValues(verts[startIdx + 3], verts[startIdx + 4], verts[startIdx + 5]);
+			const bUv = vec2.fromValues(verts[startIdx + 6], verts[startIdx + 7]);
+			const bN = vec3.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10]);
+
+			startIdx += attribCount;
+			const cC = vec3.fromValues(verts[startIdx + 3], verts[startIdx + 4], verts[startIdx + 5]);
+			const cUv = vec2.fromValues(verts[startIdx + 6], verts[startIdx + 7]);
+			const cN = vec3.fromValues(verts[startIdx + 8], verts[startIdx + 9], verts[startIdx + 10]);
+
 			// Get average world position of triangle for depth sorting.
 			const avgPos = vec3.clone(aT);
 			vec3.add(avgPos, avgPos, bT);
@@ -560,9 +607,8 @@ async function mainLoop() {
 			const distSqr = vec3.squaredDistance(cameraWorldPos, avgPos);
 
 			const triIdx = drawList.length;
-			drawList.push({ idx: i, dist: distSqr });
+			drawList.push({ idx: triIdx, dist: distSqr });
 
-			// Put tri in state tri buffer.
 			// Project verts to screenspace.
 			mat4.multiply(aT, viewProj, aT);
 			mat4.multiply(bT, viewProj, bT);
@@ -583,31 +629,60 @@ async function mainLoop() {
 			c[0] = (c[0] + 1) / 2;
 			c[1] = (c[1] + 1) / 2;
 
-			tempTri[triIdx * 48 + 0] = a[0];
-			tempTri[triIdx * 48 + 1] = a[1];
-			tempTri[triIdx * 48 + 8] = ((i * 1000) % 256) / 255;
-			tempTri[triIdx * 48 + 9] = ((i * 2554) % 256) / 255;
-			tempTri[triIdx * 48 + 10] = ((i * 5353) % 256) / 255;
-			tempTri[triIdx * 48 + (16 * 1) + 0] = b[0];
-			tempTri[triIdx * 48 + (16 * 1) + 1] = b[1];
-			tempTri[triIdx * 48 + (16 * 2) + 0] = c[0];
-			tempTri[triIdx * 48 + (16 * 2) + 1] = c[1];
+			// V1
+			let vIdx = triIdx * 48;
+			tempTriBuffer[vIdx + 0] = a[0];
+			tempTriBuffer[vIdx + 1] = a[1];
+			tempTriBuffer[vIdx + 2] = a[2];
+			tempTriBuffer[vIdx + 3] = aT[3];
+
+			tempTriBuffer[vIdx + 8] = aC[0];
+			tempTriBuffer[vIdx + 9] = aC[1];
+			tempTriBuffer[vIdx + 10] = aC[2];
+
+			tempTriBuffer[vIdx + 12] = aUv[0];
+			tempTriBuffer[vIdx + 13] = aUv[1];
+
+			// V2
+			vIdx += 16;
+			tempTriBuffer[vIdx + 0] = b[0];
+			tempTriBuffer[vIdx + 1] = b[1];
+			tempTriBuffer[vIdx + 2] = b[2];
+			tempTriBuffer[vIdx + 3] = bT[3];
+
+			tempTriBuffer[vIdx + 8] = bC[0];
+			tempTriBuffer[vIdx + 9] = bC[1];
+			tempTriBuffer[vIdx + 10] = bC[2];
+
+			tempTriBuffer[vIdx + 12] = bUv[0];
+			tempTriBuffer[vIdx + 13] = bUv[1];
+
+			// V3
+			vIdx += 16;
+			tempTriBuffer[vIdx + 0] = c[0];
+			tempTriBuffer[vIdx + 1] = c[1];
+			tempTriBuffer[vIdx + 2] = c[2];
+			tempTriBuffer[vIdx + 3] = cT[3];
+
+			tempTriBuffer[vIdx + 8] = cC[0];
+			tempTriBuffer[vIdx + 9] = cC[1];
+			tempTriBuffer[vIdx + 10] = cC[2];
+
+			tempTriBuffer[vIdx + 12] = cUv[0];
+			tempTriBuffer[vIdx + 13] = cUv[1];
 		}
 	}
-	// console.log('Tri initial cull:', performance.now() - t0);
 
 	// Sort by depth.
-	t0 = performance.now();
 	drawList.sort((a, b) => b.dist - a.dist);
-	// console.log('Tri sort:', performance.now() - t0);
 
-	// tempTri[0 * 48 + 0] = 0;
-	// tempTri[0 * 48 + 1] = 0;
-	// tempTri[0 * 48 + 8] = 1;
-	// tempTri[0 * 48 + (16 * 1) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 1) + 1] = 0;
-	// tempTri[0 * 48 + (16 * 2) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 2) + 1] = 0.5;
+	// Copy temp tri buffer to state tri buffer.
+	for (let i = 0; i < drawList.length; i++) {
+		const triIdx = drawList[i].idx;
+		triBuffer.set(tempTriBuffer.subarray(triIdx * 48, triIdx * 48 + 48), i * 48);
+	}
+
+	prepTimeFiltered = 0.9 * prepTimeFiltered + 0.1 * (performance.now() - t0);
 
 	//------------------------------------------------------------------------------------------------
 	// Rasterization.
@@ -620,69 +695,29 @@ async function mainLoop() {
 	const frameTime = performance.now() - t0;
 
 	frameTimeFiltered = 0.9 * frameTimeFiltered + 0.1 * frameTime;
-	let debugStr = frameTimeFiltered.toFixed(2) + ' ms';
+	let debugStr = '<p>' + frameTimeFiltered.toFixed(2) + ' ms';
 	debugStr += ' Tris: ' + drawList.length + '/' + numPrims;
 	debugStr += ' Cam: ' + camPosition[0].toFixed(2) + ', ' + camPosition[1].toFixed(2) + ', ' + camPosition[2].toFixed(2) + ' ' + camRotX.toFixed(2) + ', ' + camRotY.toFixed(2);
-	debugText.textContent = debugStr;
+	debugStr += '</p>';
+	debugStr += '<p>';
+	debugStr += 'Prep: ' + prepTimeFiltered.toFixed(2) + ' ms';
+	debugStr += '</p>';
+	debugText.innerHTML = debugStr;
 
 	requestAnimationFrame(mainLoop);
 }
 
 const state = {
 	tempTriBuffer: new ArrayBuffer(8000 * triSizeBytes),
+	triBuffer: new ArrayBuffer(8000 * triSizeBytes),
 	sceneDataRaw: new ArrayBuffer(64),
 };
 
 async function main() {
 	await wgpuInit(canvas, state);
 
-	const triangleData = [];
-
-	// Push random triangle data
-	for (let i = 0; i < 8000; i++) {
-		const offsetX = Math.random() * 1.0;
-		const offsetY = Math.random() * 1.0;
-		const sizeX = Math.random() * 0.2 + 0.1;
-		const sizeY = Math.random() * 0.2 + 0.1;
-
-		const normal = [0, 0, 1, 0];
-
-		// V0.
-		{
-			const pos = [offsetX, offsetY, 0, 1];
-			const color = [Math.random(), Math.random(), Math.random(), 1];
-			const uv = [0, 0, 0, 0];
-
-			triangleData.push(...pos, ...normal, ...color, ...uv);
-		}
-
-		// V1.
-		{
-			const pos = [offsetX + sizeX, offsetY, 0, 1];
-			const color = [Math.random(), Math.random(), Math.random(), 1];
-			const uv = [0, 0, 0, 0];
-
-			triangleData.push(...pos, ...normal, ...color, ...uv);
-		}
-
-		// V2.
-		{
-			const pos = [offsetX, offsetY + sizeY, 0, 1];
-			const color = [Math.random(), Math.random(), Math.random(), 1];
-			const uv = [0, 0, 0, 0];
-
-			triangleData.push(...pos, ...normal, ...color, ...uv);
-		}
-	}
-
-	// const tempTri = new Float32Array(state.tempTriBuffer);
-	// tempTri[0 * 48 + 0] = 0;
-	// tempTri[0 * 48 + 1] = 0;
-	// tempTri[0 * 48 + 8] = 1;
-	// tempTri[0 * 48 + (16 * 1) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 1) + 1] = 0;
-	// tempTri[0 * 48 + (16 * 2) + 0] = 0.5;
-	// tempTri[0 * 48 + (16 * 2) + 1] = 0.5;
+	const texSheet1 = getTexturePixelsFromDomElement('texture-sheet');
+	state.texSheet1 = wgpuCreateTextureBuffer(texSheet1.data, texSheet1.width, texSheet1.height);
 
 	mainLoop();
 }

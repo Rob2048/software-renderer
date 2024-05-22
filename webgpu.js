@@ -1,5 +1,28 @@
 'use strict';
 
+function wgpuCreateTextureBuffer(imgData, width, height) {
+	const buffer = state.device.createBuffer({
+		size: width * height * 4 + 4 + 4,
+		usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+	});
+
+	const tempBuffer = new ArrayBuffer(width * height * 4 + 4 + 4);
+	const tempBufferView = new DataView(tempBuffer);
+	const tempBufferViewUint8 = new Uint8Array(tempBuffer);
+
+	tempBufferView.setUint32(0, width, true);
+	tempBufferView.setUint32(4, height, true);
+	tempBufferViewUint8.set(imgData, 8);
+
+	state.device.queue.writeBuffer(buffer, 0, tempBuffer);
+
+	return {
+		buffer,
+		width,
+		height,
+	};
+}
+
 async function wgpuInit(canvas, state) {
 	// https://codelabs.developers.google.com/your-first-webgpu-app#6
 	if (!navigator.gpu) {
@@ -52,15 +75,9 @@ async function wgpuInit(canvas, state) {
 	const renderShaderModule = device.createShaderModule({
 		label: 'Render compute shader',
 		code: /* wgsl */ `
-			@group(0) @binding(0)
-			var<uniform> sceneData: SceneData;
-			
-			@group(0) @binding(1)
-			var screenBuffer: texture_storage_2d<${presentationFormat}, write>;
-
 			struct SceneData {
 				triCount: u32
-			}
+			};
 
 			struct Vertex {
 				position: vec4<f32>,
@@ -73,24 +90,38 @@ async function wgpuInit(canvas, state) {
 				verts: array<Vertex, 3>
 			};
 
-			@group(0) @binding(2)
-			var<storage> triangle_list: array<Triangle>;
+			struct Texture {
+				width: u32,
+				height: u32,
+				data: array<u32>
+			};
 
-			@compute
-			@workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
+			fn getTexColor(intColor: u32) -> vec4<f32> {
+				let r = f32(intColor & 0xFF) / 255.0;
+				let g = f32((intColor >> 8) & 0xFF) / 255.0;
+				let b = f32((intColor >> 16) & 0xFF) / 255.0;
+				let a = f32((intColor >> 24) & 0xFF) / 255.0;
+				return vec4<f32>(r, g, b, a);
+			}
+
+			@group(0) @binding(0) var<uniform> sceneData: SceneData;
+			@group(0) @binding(1) var screenBuffer: texture_storage_2d<${presentationFormat}, write>;
+			@group(0) @binding(2) var<storage> triangle_list: array<Triangle>;
+			@group(0) @binding(3) var<storage> tex_sheet_1: Texture;
+
+			@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 			fn computeMain(@builtin(global_invocation_id) invokeId: vec3u) {
 				let tileIdx = invokeId.x + invokeId.y * ${TILES_X.toFixed(0)};
-
-				// let triCount = u32(1);//arrayLength(&triangle_list);
-
 				let tilePxStart = vec2<u32>(invokeId.x * ${TILE_SIZE}, invokeId.y * ${TILE_SIZE});
 				let tilePxEnd = tilePxStart + vec2<u32>(${TILE_SIZE} - 1, ${TILE_SIZE} - 1);
-				// let tilePxEnd = tilePxStart + vec2<u32>(2 - 1, 2 - 1);
-
+				
 				for (var t: u32 = 0; t < sceneData.triCount; t = t + 1) {
 					// Get random color base on triangle index
 					let tri = triangle_list[t];
-					let triCol = tri.verts[0].color;
+					
+					let c0 = tri.verts[0].color;
+					let c1 = tri.verts[1].color;
+					let c2 = tri.verts[2].color;
 
 					let ab = tri.verts[1].position - tri.verts[0].position;
 					let bc = tri.verts[2].position - tri.verts[1].position;
@@ -111,16 +142,22 @@ async function wgpuInit(canvas, state) {
 					let actualTilePxStart = max(tilePxStart, boundsMinPx);
 					let actualTilePxEnd = min(tilePxEnd, boundsMaxPx);
 
+					// Barycentric prep.
+					let v0 = (tri.verts[1].position - tri.verts[0].position).xy; // b - a;
+					let v1 = (tri.verts[2].position - tri.verts[0].position).xy; // c - a;
+					let d00 = dot(v0, v0);
+					let d01 = dot(v0, v1);
+					let d11 = dot(v1, v1);
+					let denom = d00 * d11 - d01 * d01;
+					let w0 = 1 / tri.verts[0].position.w;
+					let w1 = 1 / tri.verts[1].position.w;
+					let w2 = 1 / tri.verts[2].position.w;
 
 					// NOTE: Dynamic loop is ~2x slower than static loop, but culling here improves perf overall.
-					
-					// for (var i: u32 = 0; i < ${TILE_SIZE}; i = i + 1) {
 					for (var pixelX: u32 = actualTilePxStart.x; pixelX <= actualTilePxEnd.x; pixelX = pixelX + 1) {
-						// let pixelX = invokeId.x * ${TILE_SIZE} + i;
 						let pixelX_u = f32(pixelX) / 512.0;
 
 						for (var pixelY: u32 = actualTilePxStart.y; pixelY <= actualTilePxEnd.y; pixelY = pixelY + 1) {
-							// let pixelY = invokeId.y * ${TILE_SIZE} + j;
 							let pixelY_v = f32(pixelY) / 384.0;
 							let p = vec2f(pixelX_u, pixelY_v);
 
@@ -132,50 +169,53 @@ async function wgpuInit(canvas, state) {
 							let dot2 = dot(bp, n2);
 							let dot3 = dot(cp, n3);
 
-							var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+							var finalColor = vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
 							if (dot1 >= 0.0 && dot2 >= 0.0 && dot3 >= 0.0) {
-								// color = vec4<f32>(pixelX_u, pixelY_v, 0.0, 1.0);
-								color = triCol;
-								textureStore(screenBuffer, vec2<u32>(pixelX, pixelY), color);
-							}
+								// Calc bary coords.
+								let v2 = p - tri.verts[0].position.xy;
+								let d20 = dot(v2, v0);
+								let d21 = dot(v2, v1);
+								var baryI = vec3<f32>(0.0, 0.0, 0.0);
+								baryI.y = (d11 * d20 - d01 * d21) / denom;
+								baryI.z = (d00 * d21 - d01 * d20) / denom;
+								baryI.x = 1.0 - baryI.y - baryI.z;
 
-							// let color = vec4<f32>(f32(tileIdx) / ${TILES_COUNT.toFixed(0)}, 0, 0, 1);
-							// let color = vec4<f32>(f32(invokeId.x) / ${TILES_X}, f32(invokeId.y) / ${TILES_Y}, 0, 1);
+								// Perspective correct bary.
+								let w = 1 / (baryI.x * w0 + baryI.y * w1 + baryI.z * w2);
+
+								var bary = vec3<f32>(0.0, 0.0, 0.0);
+								bary.x = baryI.x * w * w0;
+								bary.y = baryI.y * w * w1;
+								bary.z = baryI.z * w * w2;
+
+								// Vertex color.
+								finalColor = c0 * bary.x + c1 * bary.y + c2 * bary.z;
+
+								// Texture sampling.
+								let intUv = tri.verts[0].uv.rg * bary.x + tri.verts[1].uv.rg * bary.y + tri.verts[2].uv.rg * bary.z;
+								let texX = u32(intUv.x * f32(tex_sheet_1.width));
+								let texY = u32(intUv.y * f32(tex_sheet_1.height));
+								let texIndex = (texY * tex_sheet_1.width + texX);
+								let texColor = tex_sheet_1.data[texIndex];
+
+								finalColor *= getTexColor(texColor);
+								
+								textureStore(screenBuffer, vec2<u32>(pixelX, pixelY), finalColor);
+							}
 						}
 					}
 
 				}
 				
 				// Tile border, debug.
-				for (var p: u32 = 0; p < ${TILE_SIZE}; p = p + 1) {
-					textureStore(screenBuffer, vec2<u32>(tilePxStart.x + p, tilePxStart.y), vec4<f32>(0.2, 0.2, 0.2, 1.0));
-					textureStore(screenBuffer, vec2<u32>(tilePxStart.x, tilePxStart.y + p), vec4<f32>(0.2, 0.2, 0.2, 1.0));
-				}
+				// for (var p: u32 = 0; p < ${TILE_SIZE}; p = p + 1) {
+				// 	textureStore(screenBuffer, vec2<u32>(tilePxStart.x + p, tilePxStart.y), vec4<f32>(0.2, 0.2, 0.2, 1.0));
+				// 	textureStore(screenBuffer, vec2<u32>(tilePxStart.x, tilePxStart.y + p), vec4<f32>(0.2, 0.2, 0.2, 1.0));
+				// }
 			}
 		`,
 	});
-
-	// const bindGroupLayout = device.createBindGroupLayout({
-	// 	label: 'Bind group layout',
-	// 	entries: [
-	// 		{
-	// 			binding: 0,
-	// 			visibility: GPUShaderStage.COMPUTE,
-	// 			buffer: { type: 'storage' },
-	// 		},
-	// 	],
-	// });
-
-	// const screenBuffer = device.createBuffer({
-	// 	size: SCREEN_PIXELS_COUNT * 4,
-	// 	usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-	// });
-
-	// const stagingBuffer = device.createBuffer({
-	// 	size: SCREEN_PIXELS_COUNT * 4,
-	// 	usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-	// });
 
 	const computePipeline = device.createComputePipeline({
 		label: 'Compute pipeline',
@@ -204,11 +244,12 @@ async function wgpuRender() {
 			{ binding: 0, resource: { buffer: state.sceneData } },
 			{ binding: 1, resource: state.context.getCurrentTexture().createView() },
 			{ binding: 2, resource: { buffer: state.triangleBuffer } },
+			{ binding: 3, resource: { buffer: state.texSheet1.buffer } },
 		],
 	});
 
 	device.queue.writeBuffer(state.sceneData, 0, state.sceneDataRaw);
-	device.queue.writeBuffer(state.triangleBuffer, 0, state.tempTriBuffer);
+	device.queue.writeBuffer(state.triangleBuffer, 0, state.triBuffer);
 
 	const encoder = device.createCommandEncoder();
 
