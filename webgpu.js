@@ -151,8 +151,8 @@ async function wgpuInit(canvas, state) {
 					let n3 = vec2<f32>(-ca.y, ca.x);
 
 					// Barycentric prep.
-					let v0 = (tri.verts[1].position - tri.verts[0].position).xy; // b - a;
-					let v1 = (tri.verts[2].position - tri.verts[0].position).xy; // c - a;
+					let v0 = (tri.verts[1].position - tri.verts[0].position).xy;
+					let v1 = (tri.verts[2].position - tri.verts[0].position).xy;
 					let d00 = dot(v0, v0);
 					let d01 = dot(v0, v1);
 					let d11 = dot(v1, v1);
